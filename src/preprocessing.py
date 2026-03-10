@@ -1,4 +1,4 @@
-"""Signal preprocessing — filtering, epoching, artifact rejection."""
+"""Signal preprocessing — filtering, epoching, ICA artifact rejection."""
 
 import logging
 
@@ -12,9 +12,15 @@ from src.config import (
     EPOCH_TMAX,
     EPOCH_TMIN,
     EVENT_ID,
+    ICA_EOG_THRESHOLD,
+    ICA_METHOD,
+    ICA_MUSCLE_THRESHOLD,
+    ICA_N_COMPONENTS,
+    ICA_RANDOM_STATE,
     NOTCH_FREQS,
     REJECT_THRESHOLD,
     REJECT_WARN_RATIO,
+    USE_ICA,
 )
 
 logger = logging.getLogger(__name__)
@@ -78,6 +84,116 @@ def apply_filters(raw: mne.io.Raw) -> mne.io.Raw:
     )
 
     return raw_copy
+
+
+def apply_ica(
+    raw: mne.io.Raw,
+    n_components: int = ICA_N_COMPONENTS,
+    method: str = ICA_METHOD,
+    eog_threshold: float = ICA_EOG_THRESHOLD,
+    muscle_threshold: float = ICA_MUSCLE_THRESHOLD,
+) -> tuple[mne.io.Raw, dict]:
+    """Apply ICA-based artifact removal to filtered raw data.
+
+    Auto-detects and excludes EOG (eye blink) and EMG (muscle) components.
+    Operates on a copy and returns the cleaned data.
+
+    Parameters
+    ----------
+    raw : mne.io.Raw
+        Filtered raw EEG data.
+    n_components : int
+        Number of ICA components to estimate.
+    method : str
+        ICA decomposition algorithm ('fastica', 'infomax', 'picard').
+    eog_threshold : float
+        Correlation threshold for identifying EOG components.
+    muscle_threshold : float
+        Z-score threshold for identifying muscle artifact components.
+
+    Returns
+    -------
+    raw_clean : mne.io.Raw
+        ICA-cleaned raw data.
+    ica_info : dict
+        Logging info: components excluded, method used, etc.
+    """
+    raw_copy = raw.copy()
+
+    # Fit ICA
+    ica = mne.preprocessing.ICA(
+        n_components=n_components,
+        method=method,
+        random_state=ICA_RANDOM_STATE,
+        max_iter="auto",
+    )
+    ica.fit(raw_copy, verbose=False)
+
+    logger.info(
+        "ICA fitted: method=%s, n_components=%d, n_iter=%d",
+        method, ica.n_components_, getattr(ica, "n_iter_", -1),
+    )
+
+    exclude_idx = []
+    component_labels = {}
+
+    # --- Detect EOG-like components ---
+    # PhysioNet EEGBCI has no dedicated EOG channel, so we use frontal
+    # channels (Fp1, Fp2) as surrogate EOG references.
+    eog_ch_names = []
+    for ch in raw_copy.ch_names:
+        clean = ch.replace(".", "").upper()
+        if clean in ("FP1", "FP2", "FPZ"):
+            eog_ch_names.append(ch)
+
+    if eog_ch_names:
+        for eog_ch in eog_ch_names:
+            try:
+                eog_indices, eog_scores = ica.find_bads_eog(
+                    raw_copy, ch_name=eog_ch, threshold=eog_threshold, verbose=False,
+                )
+                for idx in eog_indices:
+                    if idx not in exclude_idx:
+                        exclude_idx.append(idx)
+                        component_labels[idx] = f"EOG (via {eog_ch})"
+            except Exception as exc:
+                logger.debug("EOG detection with %s failed: %s", eog_ch, exc)
+    else:
+        # Fallback: correlate with frontal channels using the raw data
+        logger.info("No Fp1/Fp2/Fpz channels found; skipping EOG correlation detection.")
+
+    # --- Detect muscle artifact components ---
+    # Use high-frequency power (> 30 Hz) as a proxy for muscle artifacts.
+    try:
+        muscle_indices, muscle_scores = ica.find_bads_muscle(
+            raw_copy, threshold=muscle_threshold, verbose=False,
+        )
+        for idx in muscle_indices:
+            if idx not in exclude_idx:
+                exclude_idx.append(idx)
+                component_labels[idx] = "Muscle"
+    except Exception as exc:
+        logger.debug("Muscle artifact detection failed: %s", exc)
+
+    # Apply exclusion
+    ica.exclude = exclude_idx
+    raw_clean = ica.apply(raw_copy, verbose=False)
+
+    ica_info = {
+        "method": method,
+        "n_components_fitted": ica.n_components_,
+        "n_excluded": len(exclude_idx),
+        "excluded_indices": exclude_idx,
+        "component_labels": {str(k): v for k, v in component_labels.items()},
+    }
+
+    logger.info(
+        "ICA artifact removal: excluded %d components %s",
+        len(exclude_idx),
+        [(idx, component_labels.get(idx, "unknown")) for idx in exclude_idx],
+    )
+
+    return raw_clean, ica_info
 
 
 def extract_epochs(
@@ -182,6 +298,52 @@ def extract_epochs(
         )
 
     return epochs
+
+
+def pick_roi_channels(
+    epochs: mne.Epochs,
+    roi_channels: list[str] | None = None,
+) -> mne.Epochs:
+    """Restrict epochs to motor cortex ROI channels.
+
+    Matches channel names case-insensitively and handles dotted names
+    (e.g., 'C3.' -> 'C3').
+
+    Parameters
+    ----------
+    epochs : mne.Epochs
+        Full-channel epochs.
+    roi_channels : list of str, optional
+        Channel names to keep. Defaults to MOTOR_ROI_CHANNELS from config.
+
+    Returns
+    -------
+    mne.Epochs with only the matched ROI channels.
+    """
+    from src.config import MOTOR_ROI_CHANNELS
+    roi_channels = roi_channels or MOTOR_ROI_CHANNELS
+
+    # Build a mapping from clean name -> actual name in epochs
+    roi_upper = {ch.upper() for ch in roi_channels}
+    matched = []
+    for ch in epochs.ch_names:
+        clean = ch.replace(".", "").upper()
+        if clean in roi_upper:
+            matched.append(ch)
+
+    if not matched:
+        logger.warning(
+            "No ROI channels matched from %s in %s — returning all channels.",
+            roi_channels, epochs.ch_names[:10],
+        )
+        return epochs
+
+    logger.info(
+        "ROI channel selection: %d/%d channels -> %s",
+        len(matched), len(epochs.ch_names), matched,
+    )
+
+    return epochs.copy().pick(matched)
 
 
 if __name__ == "__main__":

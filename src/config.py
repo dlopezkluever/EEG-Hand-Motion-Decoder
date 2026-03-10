@@ -35,10 +35,18 @@ NOTCH_FREQS = [60.0, 120.0]           # US power-line noise + 1st harmonic
 EPOCH_TMIN = -0.5                      # seconds before event onset
 EPOCH_TMAX = 4.0                       # seconds after event onset
 BASELINE = (None, 0)                   # mean-subtract over pre-stimulus window
-REJECT_THRESHOLD = None                # Disabled until ICA is applied (Phase 5)
-                                       # Raw EEGBCI data exceeds 150 µV routinely;
-                                       # set to 150e-6 after ICA artifact removal
+REJECT_THRESHOLD = None                # Set to 150e-6 when ICA is enabled
 REJECT_WARN_RATIO = 0.30              # flag subject if >30% epochs rejected
+
+# ---------------------------------------------------------------------------
+# Preprocessing — ICA Artifact Removal (Phase 5)
+# ---------------------------------------------------------------------------
+USE_ICA = False                        # Toggle ICA artifact removal on/off
+ICA_N_COMPONENTS = 20                  # Number of ICA components to fit
+ICA_METHOD = "fastica"                 # ICA decomposition method
+ICA_RANDOM_STATE = 42                  # Reproducibility for ICA
+ICA_EOG_THRESHOLD = 3.0                # Z-score threshold for EOG detection (find_bads_eog)
+ICA_MUSCLE_THRESHOLD = 1.0            # Z-score threshold for muscle artifact detection
 
 EVENT_ID = {"left": 1, "right": 2}    # T1 → left, T2 → right
 
@@ -60,7 +68,8 @@ FREQ_BANDS = {
     "low_gamma": (30, 40),
 }
 
-# Motor cortex ROI channels (optional subset)
+# Motor cortex ROI channels (optional subset — Phase 5)
+USE_ROI_CHANNELS = False               # Toggle ROI channel selection on/off
 MOTOR_ROI_CHANNELS = ["C3", "C4", "Cz", "FC3", "FC4", "CP3", "CP4"]
 
 # ---------------------------------------------------------------------------
@@ -103,6 +112,13 @@ RANDOM_SEED = 42
 # ---------------------------------------------------------------------------
 AUGMENT_GAUSSIAN_STD = 0.01
 AUGMENT_TEMPORAL_JITTER_MS = 50
+
+# ---------------------------------------------------------------------------
+# Experiment Tracking (Phase 5)
+# ---------------------------------------------------------------------------
+USE_MLFLOW = False                     # Toggle MLflow experiment tracking
+MLFLOW_EXPERIMENT_NAME = "EEG-BCI-Pipeline"
+MLFLOW_TRACKING_URI = "file:./mlruns"  # Local file-based tracking
 
 
 def get_config() -> dict:
