@@ -1,0 +1,16 @@
+{
+  "accuracy": 0.7,
+  "precision_macro": 0.7083333333333333,
+  "precision_left": 0.75,
+  "precision_right": 0.6666666666666666,
+  "recall_macro": 0.7,
+  "recall_left": 0.6,
+  "recall_right": 0.8,
+  "f1_macro": 0.696969696969697,
+  "f1_left": 0.6666666666666666,
+  "f1_right": 0.7272727272727273,
+  "auc_roc": 0.6977777777777778,
+  "cohens_kappa": 0.4,
+  "cv_mean_accuracy": 0.7,
+  "cv_std_accuracy": 0.17950549357115014
+}

@@ -34,7 +34,9 @@ NOTCH_FREQS = [60.0, 120.0]           # US power-line noise + 1st harmonic
 EPOCH_TMIN = -0.5                      # seconds before event onset
 EPOCH_TMAX = 4.0                       # seconds after event onset
 BASELINE = (None, 0)                   # mean-subtract over pre-stimulus window
-REJECT_THRESHOLD = 150e-6              # 150 µV peak-to-peak for artifact rejection
+REJECT_THRESHOLD = None                # Disabled until ICA is applied (Phase 5)
+                                       # Raw EEGBCI data exceeds 150 µV routinely;
+                                       # set to 150e-6 after ICA artifact removal
 REJECT_WARN_RATIO = 0.30              # flag subject if >30% epochs rejected
 
 EVENT_ID = {"left": 1, "right": 2}    # T1 → left, T2 → right

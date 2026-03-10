@@ -1,0 +1,16 @@
+{
+  "accuracy": 0.6333333333333333,
+  "precision_macro": 0.6339285714285714,
+  "precision_left": 0.6428571428571429,
+  "precision_right": 0.625,
+  "recall_macro": 0.6333333333333333,
+  "recall_left": 0.6,
+  "recall_right": 0.6666666666666666,
+  "f1_macro": 0.6329254727474972,
+  "f1_left": 0.6206896551724138,
+  "f1_right": 0.6451612903225806,
+  "auc_roc": 0.6088888888888888,
+  "cohens_kappa": 0.2666666666666667,
+  "cv_mean_accuracy": 0.6333333333333333,
+  "cv_std_accuracy": 0.23333333333333334
+}

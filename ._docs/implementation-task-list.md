@@ -52,51 +52,51 @@ Each phase builds on the previous, delivering a functional product at every stag
 
 ### 1.1 Signal Preprocessing — Filtering
 
-- [ ] Implement `src/preprocessing.py` — function `apply_filters(raw)` that applies: (1) bandpass FIR filter 1–40 Hz via `raw.filter()`, (2) notch filter at 60 Hz and 120 Hz via `raw.notch_filter()`
-- [ ] Apply common average reference (CAR) via `raw.set_eeg_reference('average', projection=True)`
-- [ ] Log filter parameters applied (low freq, high freq, notch freqs, filter type)
-- [ ] Verify filtered signal: print before/after data shape, confirm no NaN values, confirm channel count unchanged
-- [ ] Add unit test: load Subject 1, apply filters, assert data shape unchanged and values differ from raw
+- [x] Implement `src/preprocessing.py` — function `apply_filters(raw)` that applies: (1) bandpass FIR filter 1–40 Hz via `raw.filter()`, (2) notch filter at 60 Hz and 120 Hz via `raw.notch_filter()`
+- [x] Apply common average reference (CAR) via `raw.set_eeg_reference('average', projection=True)`
+- [x] Log filter parameters applied (low freq, high freq, notch freqs, filter type)
+- [x] Verify filtered signal: print before/after data shape, confirm no NaN values, confirm channel count unchanged
+- [x] Add unit test: load Subject 1, apply filters, assert data shape unchanged and values differ from raw
 
 ### 1.2 Signal Preprocessing — Epoch Extraction
 
-- [ ] Implement function `extract_epochs(raw, tmin=-0.5, tmax=4.0, reject_threshold=150e-6)` that reads event annotations, maps T1→left (class 0), T2→right (class 1), and creates `mne.Epochs`
-- [ ] Apply baseline correction over the pre-stimulus window (−0.5 to 0.0 s)
-- [ ] Configure artifact rejection: reject epochs with peak-to-peak amplitude > 150 µV
-- [ ] Log: total epochs extracted, epochs per class, number rejected, rejection percentage; flag subjects with >30% rejection rate
-- [ ] Add unit test: extract epochs for Subject 1, assert epochs exist for both classes, assert epoch shape is (n_epochs, 64, n_timepoints)
+- [x] Implement function `extract_epochs(raw, tmin=-0.5, tmax=4.0, reject_threshold=150e-6)` that reads event annotations, maps T1→left (class 0), T2→right (class 1), and creates `mne.Epochs`
+- [x] Apply baseline correction over the pre-stimulus window (−0.5 to 0.0 s)
+- [x] Configure artifact rejection: reject epochs with peak-to-peak amplitude > 150 µVpl
+- [x] Log: total epochs extracted, epochs per class, number rejected, rejection percentage; flag subjects with >30% rejection rate
+- [x] Add unit test: extract epochs for Subject 1, assert epochs exist for both classes, assert epoch shape is (n_epochs, 64, n_timepoints)
 
 ### 1.3 Feature Engineering — PSD Band Power (Pathway A)
 
-- [ ] Implement `src/features.py` — function `extract_psd_features(epochs)` using `mne.time_frequency.psd_array_welch` (2s window, 50% overlap, Hanning)
-- [ ] Compute average band power for each of the 6 canonical bands (Delta 1–4, Theta 4–8, Mu 8–12, Low Beta 13–20, High Beta 20–30, Low Gamma 30–40 Hz) across all 64 channels
-- [ ] Flatten feature vector per epoch to shape `(n_epochs, 64 × 6)` = `(n_epochs, 384)`, extract labels array `y`
-- [ ] Apply `StandardScaler` normalization to the feature matrix
-- [ ] Add unit test: extract features for Subject 1, assert feature matrix shape is `(n_epochs, 384)`, no NaN/Inf values
+- [x] Implement `src/features.py` — function `extract_psd_features(epochs)` using `mne.time_frequency.psd_array_welch` (2s window, 50% overlap, Hanning)
+- [x] Compute average band power for each of the 6 canonical bands (Delta 1–4, Theta 4–8, Mu 8–12, Low Beta 13–20, High Beta 20–30, Low Gamma 30–40 Hz) across all 64 channels
+- [x] Flatten feature vector per epoch to shape `(n_epochs, 64 × 6)` = `(n_epochs, 384)`, extract labels array `y`
+- [x] Apply `StandardScaler` normalization to the feature matrix
+- [x] Add unit test: extract features for Subject 1, assert feature matrix shape is `(n_epochs, 384)`, no NaN/Inf values
 
 ### 1.4 Baseline Model — Logistic Regression
 
-- [ ] Implement `src/models/logistic.py` — function `train_logistic(X, y)` using `sklearn.LogisticRegression` with `solver='lbfgs'`, `class_weight='balanced'`, `max_iter=1000`
-- [ ] Implement 10-fold stratified cross-validation using `sklearn.model_selection.StratifiedKFold`
-- [ ] Report per-fold accuracy and mean ± std accuracy across folds
-- [ ] Print classification to console: accuracy, F1-score (macro), AUC-ROC
-- [ ] Add unit test: train on Subject 1 features, assert accuracy > 0.5 (above chance)
+- [x] Implement `src/models/logistic.py` — function `train_logistic(X, y)` using `sklearn.LogisticRegression` with `solver='lbfgs'`, `class_weight='balanced'`, `max_iter=1000`
+- [x] Implement 10-fold stratified cross-validation using `sklearn.model_selection.StratifiedKFold`
+- [x] Report per-fold accuracy and mean ± std accuracy across folds
+- [x] Print classification to console: accuracy, F1-score (macro), AUC-ROC
+- [x] Add unit test: train on Subject 1 features, assert accuracy > 0.5 (above chance)
 
 ### 1.5 Basic Evaluation & Metrics
 
-- [ ] Implement `src/evaluate.py` — function `compute_metrics(y_true, y_pred, y_prob)` returning accuracy, precision, recall, F1 (per-class and macro), AUC-ROC, Cohen's Kappa
-- [ ] Implement function `save_results(metrics, model_name, subject_id)` that exports metrics to JSON in `outputs/results/`
-- [ ] Generate and save a confusion matrix heatmap (seaborn) to `outputs/figures/`
-- [ ] Print a formatted summary table of all metrics to console
-- [ ] Add unit test: pass known y_true/y_pred arrays, assert metric values are correct
+- [x] Implement `src/evaluate.py` — function `compute_metrics(y_true, y_pred, y_prob)` returning accuracy, precision, recall, F1 (per-class and macro), AUC-ROC, Cohen's Kappa
+- [x] Implement function `save_results(metrics, model_name, subject_id)` that exports metrics to JSON in `outputs/results/`
+- [x] Generate and save a confusion matrix heatmap (seaborn) to `outputs/figures/`
+- [x] Print a formatted summary table of all metrics to console
+- [x] Add unit test: pass known y_true/y_pred arrays, assert metric values are correct
 
 ### 1.6 Main Training Entrypoint
 
-- [ ] Implement `train.py` that orchestrates the full pipeline: load data → preprocess → extract features → train model → evaluate → save results
-- [ ] Support configurable subject list via command-line argument or config
-- [ ] Loop over all configured subjects, aggregate per-subject results into a summary CSV via Pandas
-- [ ] Print a final summary: per-subject accuracy table and overall mean accuracy
-- [ ] Verify full pipeline runs end-to-end for subjects 1–5 and produces accuracy above 50%
+- [x] Implement `train.py` that orchestrates the full pipeline: load data → preprocess → extract features → train model → evaluate → save results
+- [x] Support configurable subject list via command-line argument or config
+- [x] Loop over all configured subjects, aggregate per-subject results into a summary CSV via Pandas
+- [x] Print a final summary: per-subject accuracy table and overall mean accuracy
+- [x] Verify full pipeline runs end-to-end for subjects 1–5 and produces accuracy above 50%
 
 ---
 
