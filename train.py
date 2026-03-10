@@ -24,6 +24,7 @@ Phase 5 additions:
 import argparse
 import json
 import logging
+import math
 import os
 import random
 import sys
@@ -406,7 +407,11 @@ def run_model_comparison(all_results: list[dict]) -> dict:
 
             if len(accs_a) >= 2:
                 t_stat, p_value = stats.ttest_rel(accs_a, accs_b)
-                significant = p_value < 0.05
+                # Guard against inf/nan from identical differences
+                if np.isnan(t_stat) or np.isinf(t_stat):
+                    significant = False
+                else:
+                    significant = p_value < 0.05
             else:
                 t_stat, p_value, significant = float("nan"), float("nan"), False
 
@@ -702,8 +707,9 @@ def _finalize_results(
 
     for name, acc_col, f1_col, auc_col in model_configs:
         if acc_col in df.columns:
+            std_str = f"{df[acc_col].std():>10.4f}" if len(df) > 1 else "       N/A"
             print(
-                f"  {name:<15s} {df[acc_col].mean():>10.4f} {df[acc_col].std():>10.4f} "
+                f"  {name:<15s} {df[acc_col].mean():>10.4f} {std_str} "
                 f"{df[f1_col].mean():>10.4f} {df[auc_col].mean():>10.4f}"
             )
 
@@ -711,11 +717,24 @@ def _finalize_results(
     if comparison["pairwise_tests"]:
         print("\n  Pairwise t-tests (paired, p < 0.05):")
         for test in comparison["pairwise_tests"]:
-            sig = "YES *" if test["significant"] else "no"
-            print(
-                f"  {test['model_a']} vs {test['model_b']}: "
-                f"t={test['t_statistic']:.3f}, p={test['p_value']:.4f} — significant: {sig}"
-            )
+            t_val = test["t_statistic"]
+            p_val = test["p_value"]
+            if math.isnan(t_val) or math.isnan(p_val):
+                print(
+                    f"  {test['model_a']} vs {test['model_b']}: "
+                    f"N/A (need >= 2 subjects)"
+                )
+            elif math.isinf(t_val):
+                print(
+                    f"  {test['model_a']} vs {test['model_b']}: "
+                    f"t=inf (identical differences), p={p_val:.4f} — not reliable"
+                )
+            else:
+                sig = "YES *" if test["significant"] else "no"
+                print(
+                    f"  {test['model_a']} vs {test['model_b']}: "
+                    f"t={t_val:.3f}, p={p_val:.4f} — significant: {sig}"
+                )
 
     # Phase 4.3: Tuned vs default comparison
     if tune and "lr_psd_tuned_accuracy" in df.columns:

@@ -2,6 +2,7 @@
 
 import json
 import logging
+import math
 from datetime import datetime
 from pathlib import Path
 
@@ -177,7 +178,7 @@ def compute_aggregate_stats(results_df: pd.DataFrame) -> dict:
             continue
         stats[model_name] = {
             "mean": float(accs.mean()),
-            "std": float(accs.std()),
+            "std": float(accs.std()) if len(accs) > 1 else 0.0,
             "min": float(accs.min()),
             "max": float(accs.max()),
             "median": float(accs.median()),
@@ -253,8 +254,9 @@ def generate_evaluation_report(
     lines.append(f"  {'Model':<15s} {'Mean':>8s} {'Std':>8s} {'Min':>8s} {'Max':>8s} {'Median':>8s} {'N':>5s}")
     lines.append(f"  {'-'*15} {'-'*8} {'-'*8} {'-'*8} {'-'*8} {'-'*8} {'-'*5}")
     for model_name, s in agg_stats.items():
+        std_str = f"{s['std']:>8.4f}" if s['n_subjects'] > 1 else "     N/A"
         lines.append(
-            f"  {model_name:<15s} {s['mean']:>8.4f} {s['std']:>8.4f} "
+            f"  {model_name:<15s} {s['mean']:>8.4f} {std_str} "
             f"{s['min']:>8.4f} {s['max']:>8.4f} {s['median']:>8.4f} {s['n_subjects']:>5d}"
         )
     lines.append("")
@@ -281,11 +283,24 @@ def generate_evaluation_report(
         lines.append("Pairwise Statistical Tests (paired t-test)")
         lines.append("=" * 75)
         for test in comparison["pairwise_tests"]:
-            sig_str = "SIGNIFICANT" if test["significant"] else "not significant"
-            lines.append(
-                f"  {test['model_a']} vs {test['model_b']}: "
-                f"t={test['t_statistic']:.4f}, p={test['p_value']:.4f} — {sig_str}"
-            )
+            t_val = test["t_statistic"]
+            p_val = test["p_value"]
+            if math.isnan(t_val) or math.isnan(p_val):
+                lines.append(
+                    f"  {test['model_a']} vs {test['model_b']}: "
+                    f"N/A (need >= 2 subjects for paired t-test)"
+                )
+            elif math.isinf(t_val):
+                lines.append(
+                    f"  {test['model_a']} vs {test['model_b']}: "
+                    f"t=inf (identical differences), p={p_val:.4f} — not reliable"
+                )
+            else:
+                sig_str = "SIGNIFICANT" if test["significant"] else "not significant"
+                lines.append(
+                    f"  {test['model_a']} vs {test['model_b']}: "
+                    f"t={t_val:.4f}, p={p_val:.4f} — {sig_str}"
+                )
         lines.append("")
 
     # 5. Best model summary
