@@ -152,6 +152,8 @@ BCI/
 - **Statistical tests**: Paired t-tests between model accuracies (p < 0.05)
 - **Visualizations**: Confusion matrices, ROC curves, topographic maps, PSD comparisons, training curves, feature importance
 
+For detailed results, figures, and test logs see **[RESULTS.md](RESULTS.md)**.
+
 ## Experiment Tracking
 
 MLflow integration for comparing runs across configurations:
