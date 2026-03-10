@@ -466,4 +466,176 @@ The Core Neuroscience Concepts
   properly.
 
   ---
-omar
+
+
+Here's how to verify each part of Phase 3:
+
+  3.1 & 3.2 — Visualizations (quick smoke test)
+
+  Run this in your terminal from the project root:
+
+  python -c "
+  import sys; sys.path.insert(0, '.')
+  from src.data_loader import download_data, load_raw
+  from src.preprocessing import apply_filters, extract_epochs
+  from src.visualize import *
+
+  # Load one subject
+  download_data(subjects=[1])
+  raw = load_raw(subject=1)
+  filtered = apply_filters(raw)
+  epochs = extract_epochs(filtered)
+
+  # Test all signal visualizations
+  generate_all_signal_figures(epochs, subject_id=1)
+
+  # Test model performance visualizations
+  import numpy as np
+  y_true = np.array([0,0,1,1,0,1,0,1])
+  y_pred = np.array([0,1,1,1,0,0,0,1])
+  y_prob = np.array([0.2,0.6,0.8,0.9,0.3,0.4,0.1,0.7])
+  plot_confusion_matrix(y_true, y_pred, 'test_model', 1)
+  plot_roc_curve(y_true, y_prob, 'test_model', 1)
+  plot_training_curves({'train_loss':[1,.8,.5], 'val_loss':[1.1,.9,.6], 'val_accuracy':[.5,.6,.7]})        
+
+  print('Done — check outputs/figures/')
+  "
+
+  Then open outputs/figures/ and confirm you see:
+  - topomap_subject001.png + .pdf
+  - psd_comparison_subject001.png + .pdf
+  - butterfly_subject001.png + .pdf
+  - confusion_test_model_subject001.png + .pdf
+  - roc_test_model_subject001.png + .pdf
+  - training_curves_EEGNet_subject000.png + .pdf
+
+  3.3 — Evaluation Report
+
+  python -c "
+  import sys; sys.path.insert(0, '.')
+  import pandas as pd
+  from src.evaluate import generate_evaluation_report, compute_aggregate_stats
+
+  # Fake results for 3 subjects
+  df = pd.DataFrame([
+      {'subject':1, 'lr_psd_accuracy':0.72, 'lr_csp_accuracy':0.68, 'eegnet_accuracy':0.65,
+  'lr_psd_f1':0.71, 'lr_csp_f1':0.67, 'eegnet_f1':0.64, 'lr_psd_auc':0.78, 'lr_csp_auc':0.74,
+  'eegnet_auc':0.70},
+      {'subject':2, 'lr_psd_accuracy':0.80, 'lr_csp_accuracy':0.75, 'eegnet_accuracy':0.77,
+  'lr_psd_f1':0.79, 'lr_csp_f1':0.74, 'eegnet_f1':0.76, 'lr_psd_auc':0.85, 'lr_csp_auc':0.80,
+  'eegnet_auc':0.82},
+      {'subject':3, 'lr_psd_accuracy':0.60, 'lr_csp_accuracy':0.55, 'eegnet_accuracy':0.58,
+  'lr_psd_f1':0.59, 'lr_csp_f1':0.54, 'eegnet_f1':0.57, 'lr_psd_auc':0.65, 'lr_csp_auc':0.60,
+  'eegnet_auc':0.62},
+  ])
+
+  generate_evaluation_report(df)
+  print('Check outputs/results/evaluation_report.txt')
+  "
+
+  Verify outputs/results/evaluation_report.txt contains:
+  - Per-subject accuracy breakdown table
+  - Aggregate stats (mean, std, min, max, median)
+  - F1/AUC summary
+  - Best model identified
+
+  3.4 — Notebooks
+
+  Just open each in JupyterLab and confirm cells are present:
+  jupyter lab notebooks/
+
+  Full end-to-end (takes a few minutes)
+
+  python train.py --subjects 1 2
+
+  This runs the complete pipeline with all new visualizations and generates the evaluation report. Check   
+  outputs/figures/ and outputs/results/ for all outputs.
+
+  ---
+  Quick checklist:
+
+  ┌────────────────────────────────────┬─────────────────────────────────────────────────┐
+  │               Check                │                      Where                      │
+  ├────────────────────────────────────┼─────────────────────────────────────────────────┤
+  │ Topomaps, PSD, butterfly PNGs+PDFs │ outputs/figures/                                │
+  ├────────────────────────────────────┼─────────────────────────────────────────────────┤
+  │ ROC curves per model               │ outputs/figures/roc_*.png                       │
+  ├────────────────────────────────────┼─────────────────────────────────────────────────┤
+  │ Training curves                    │ outputs/figures/training_curves_*.png           │
+  ├────────────────────────────────────┼─────────────────────────────────────────────────┤
+  │ Feature importance bar chart       │ outputs/figures/feature_importance_*.png        │
+  ├────────────────────────────────────┼─────────────────────────────────────────────────┤
+  │ Subject accuracy comparison        │ outputs/figures/subject_accuracy_comparison.png │
+  ├────────────────────────────────────┼─────────────────────────────────────────────────┤
+  │ Evaluation report text             │ outputs/results/evaluation_report.txt           │
+  ├────────────────────────────────────┼─────────────────────────────────────────────────┤
+  │ Aggregate stats JSON               │ outputs/results/aggregate_stats.json            │
+  ├────────────────────────────────────┼─────────────────────────────────────────────────┤
+  │ Full metrics CSV                   │ outputs/results/full_metrics.csv                │
+  ├────────────────────────────────────┼─────────────────────────────────────────────────┤
+  │ 4 notebooks exist                  │ notebooks/01_*.ipynb through 04_*.ipynb         │
+  └────────────────────────────────────┴─────────────────────────────────────────────────┘
+
+  Want me to finish populating the notebook cells first, or would you prefer to run a verification now?    
+
+
+
+  ----
+
+
+  Here's a summary of everything implemented for Phase 4: Scale, Harden & Polish:
+
+  4.1 Full Dataset Scaling (109 Subjects)
+
+  - src/config.py: SUBJECTS updated from range(1, 11) to range(1, 110), added CACHE_RESULTS = True
+  - train.py: tqdm progress bars for subject loop, result caching (skip subjects with existing JSON results   in outputs/results/), _load_cached_result() to resume from cached data
+
+  4.2 Leave-One-Subject-Out (LOSO) Cross-Validation
+
+  - src/evaluate.py: Added run_loso_cv() — trains on all-but-one subjects, tests on held-out subject,      
+  supports LR_PSD, LR_CSP, and EEGNet_Raw
+  - src/evaluate.py: Added compare_within_vs_cross_subject() — generates comparison table with accuracy    
+  drop
+  - train.py: Added run_loso_mode() and --loso / --loso-models CLI flags
+
+  4.3 Hyperparameter Tuning — Logistic Regression
+
+  - src/models/logistic.py: Added train_logistic_tuned() with nested CV (outer 10-fold, inner 5-fold       
+  GridSearchCV over C = [0.001, 0.01, 0.1, 1.0, 10.0]), reports best C per fold and overall
+  - train.py: Integrated via --tune flag, saves grid search details to JSON, prints tuned vs default       
+  comparison
+
+  4.4 Data Augmentation for EEGNet
+
+  - src/augmentation.py (new): augment_gaussian_noise() (σ=0.01), augment_temporal_jitter() (±8 samples /  
+  ±50ms), apply_augmentation() (combines both, 3x training data)
+  - src/models/eegnet.py: train_eegnet_cv() now accepts optional augment_fn parameter, applies to training 
+  folds only
+  - train.py: Integrated via --augment flag
+
+  4.5 Pipeline Hardening & Reproducibility
+
+  - train.py: set_global_seeds() sets numpy, torch, Python random, CUDA, cuDNN seeds
+  - Extended CLI: --subjects, --no-cache, --tune, --augment, --loso, --loso-models, --cv-folds,
+  --output-dir, --seed
+  - Per-subject error handling already existed, now with cache-aware progress tracking
+
+  ● Start small to verify, then scale up:
+
+  Quick smoke test (1 subject, ~2-3 min):
+  python train.py --subjects 1 --no-cache
+
+  Test with Phase 5 features (1 subject, ~3-5 min):
+  python train.py --subjects 1 --no-cache --ica --roi
+
+  Test everything together (3 subjects, ~10-15 min):
+  python train.py --subjects 1 2 3 --no-cache --ica --tune --augment
+
+  Test standalone evaluation:
+  python evaluate.py --model-path outputs/models/eegnet_fold01.pt --data-subjects 1
+  python evaluate.py --results-dir outputs/results/
+
+  Test LOSO (needs 3+ subjects):
+  python train.py --loso --subjects 1 2 3 --loso-models LR_PSD
+
+  I'd recommend starting with the first command. Want me to run it?

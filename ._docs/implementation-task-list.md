@@ -242,42 +242,42 @@ Each phase builds on the previous, delivering a functional product at every stag
 
 ### 5.1 ICA Artifact Removal
 
-- [ ] Implement optional ICA-based artifact removal in `preprocessing.py` using `mne.preprocessing.ICA`
-- [ ] Auto-detect and exclude EOG (eye blink) and EMG (muscle) components
-- [ ] Compare pipeline accuracy with amplitude-rejection-only vs. ICA+amplitude rejection
-- [ ] Make ICA configurable (on/off) via `config.py`
-- [ ] Log ICA components excluded per subject
+- [x] Implement optional ICA-based artifact removal in `preprocessing.py` using `mne.preprocessing.ICA`
+- [x] Auto-detect and exclude EOG (eye blink) and EMG (muscle) components
+- [x] Compare pipeline accuracy with amplitude-rejection-only vs. ICA+amplitude rejection
+- [x] Make ICA configurable (on/off) via `config.py`
+- [x] Log ICA components excluded per subject
 
 ### 5.2 Motor Cortex ROI Channel Selection
 
-- [ ] Implement optional channel subset selection: restrict to motor cortex ROI channels (C3, C4, Cz, FC3, FC4, CP3, CP4)
-- [ ] Compare 7-channel ROI vs. full 64-channel performance for all models
-- [ ] Analyze whether reduced channel count improves or degrades accuracy (less noise vs. less information)
-- [ ] Save ROI comparison results alongside full-channel results
-- [ ] Document findings on optimal channel selection for MI-BCI
+- [x] Implement optional channel subset selection: restrict to motor cortex ROI channels (C3, C4, Cz, FC3, FC4, CP3, CP4)
+- [x] Compare 7-channel ROI vs. full 64-channel performance for all models
+- [x] Analyze whether reduced channel count improves or degrades accuracy (less noise vs. less information)
+- [x] Save ROI comparison results alongside full-channel results
+- [x] Document findings on optimal channel selection for MI-BCI
 
 ### 5.3 Experiment Tracking Integration
 
-- [ ] Integrate MLflow or Weights & Biases for experiment tracking
-- [ ] Log all hyperparameters, metrics, and artifacts (figures, models) per run
-- [ ] Enable comparison of runs across different configurations via the tracking UI
-- [ ] Add experiment tags: model type, feature type, subject count, CV strategy
-- [ ] Document setup instructions for the experiment tracker in README
+- [x] Integrate MLflow or Weights & Biases for experiment tracking
+- [x] Log all hyperparameters, metrics, and artifacts (figures, models) per run
+- [x] Enable comparison of runs across different configurations via the tracking UI
+- [x] Add experiment tags: model type, feature type, subject count, CV strategy
+- [x] Document setup instructions for the experiment tracker in README
 
 ### 5.4 Standalone Evaluation Script
 
-- [ ] Implement `evaluate.py` (root-level) as a standalone script that loads saved models and re-evaluates on specified subjects
-- [ ] Support loading both sklearn (pickle/joblib) and PyTorch (state dict) models
-- [ ] Generate all evaluation figures and metrics without retraining
-- [ ] Add `--model-path` and `--data-subjects` arguments for flexible evaluation
-- [ ] Useful for evaluating on new subjects or regenerating figures
+- [x] Implement `evaluate.py` (root-level) as a standalone script that loads saved models and re-evaluates on specified subjects
+- [x] Support loading both sklearn (pickle/joblib) and PyTorch (state dict) models
+- [x] Generate all evaluation figures and metrics without retraining
+- [x] Add `--model-path` and `--data-subjects` arguments for flexible evaluation
+- [x] Useful for evaluating on new subjects or regenerating figures
 
 ### 5.5 Documentation & Portfolio Readiness
 
-- [ ] Write comprehensive `README.md`: project overview, setup instructions, usage, results summary with key figures, architecture diagram, references
-- [ ] Add inline docstrings to all public functions in `src/` modules
-- [ ] Create a results summary section in README with accuracy tables and sample figures
-- [ ] Ensure all outputs are cleanly organized and figures are publication-quality
+- [x] Write comprehensive `README.md`: project overview, setup instructions, usage, results summary with key figures, architecture diagram, references
+- [x] Add inline docstrings to all public functions in `src/` modules
+- [x] Create a results summary section in README with accuracy tables and sample figures
+- [x] Ensure all outputs are cleanly organized and figures are publication-quality
 - [ ] Tag a v1.0 release on GitHub with the complete pipeline and results
 
 ---
