@@ -16,7 +16,8 @@ RESULTS_DIR = OUTPUT_DIR / "results"
 # ---------------------------------------------------------------------------
 # Dataset
 # ---------------------------------------------------------------------------
-SUBJECTS = list(range(1, 11))          # Default: subjects 1-10 for dev
+SUBJECTS = list(range(1, 110))         # Full 109-subject dataset
+CACHE_RESULTS = True                   # Skip subjects with existing results
 RUNS = [3, 7]                          # Motor imagery left/right fist
 SAMPLING_RATE = 160                    # Hz (PhysioNet EEGBCI)
 N_CHANNELS = 64
