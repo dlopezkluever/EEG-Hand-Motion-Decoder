@@ -3,10 +3,12 @@
 import logging
 
 import mne
+from mne.decoding import CSP
 import numpy as np
 from sklearn.preprocessing import StandardScaler
 
 from src.config import (
+    CSP_N_COMPONENTS,
     FREQ_BANDS,
     PSD_FMAX,
     PSD_FMIN,
@@ -88,6 +90,95 @@ def extract_psd_features(
         y.shape,
         n_bands,
         n_channels,
+    )
+
+    return X, y
+
+
+def extract_csp_features(
+    epochs: mne.Epochs,
+    n_components: int = CSP_N_COMPONENTS,
+) -> tuple[np.ndarray, np.ndarray, CSP]:
+    """Extract CSP features from epochs.
+
+    Uses MNE's CSP implementation with log-variance transformation.
+
+    Returns
+    -------
+    X : ndarray of shape (n_epochs, n_components)
+        CSP feature matrix.
+    y : ndarray of shape (n_epochs,)
+        Integer labels (0 = left, 1 = right).
+    csp : mne.decoding.CSP
+        Fitted CSP object (for inspecting spatial filters).
+    """
+    data = epochs.get_data()  # (n_epochs, n_channels, n_times)
+
+    # Extract labels
+    y = epochs.events[:, 2]
+    event_id = epochs.event_id
+    left_code = event_id["left"]
+    y = np.where(y == left_code, 0, 1)
+
+    # Fit CSP with log-variance transformation
+    csp = CSP(
+        n_components=n_components,
+        reg=None,
+        log=True,
+        norm_trace=False,
+    )
+    X = csp.fit_transform(data, y)
+
+    assert X.shape == (len(epochs), n_components), (
+        f"Expected shape ({len(epochs)}, {n_components}), got {X.shape}"
+    )
+    assert not np.any(np.isnan(X)), "NaN values in CSP feature matrix!"
+    assert not np.any(np.isinf(X)), "Inf values in CSP feature matrix!"
+
+    # Log CSP spatial filter weights
+    filters = csp.filters_[:n_components]
+    logger.info(
+        "CSP features: X=%s  y=%s  components=%d",
+        X.shape, y.shape, n_components,
+    )
+    logger.info(
+        "CSP filter weight ranges: %s",
+        [(f"comp{i}: [{w.min():.4f}, {w.max():.4f}]") for i, w in enumerate(filters)],
+    )
+
+    return X, y, csp
+
+
+def extract_raw_features(
+    epochs: mne.Epochs,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Extract raw epoch data with per-channel z-score normalization (Pathway C).
+
+    Returns
+    -------
+    X : ndarray of shape (n_epochs, n_channels, n_timepoints)
+        Normalized raw epoch data suitable for EEGNet input.
+    y : ndarray of shape (n_epochs,)
+        Integer labels (0 = left, 1 = right).
+    """
+    data = epochs.get_data()  # (n_epochs, n_channels, n_times)
+
+    # Per-channel z-score normalization across all epochs and timepoints
+    # Compute mean and std per channel across all epochs
+    mean = data.mean(axis=(0, 2), keepdims=True)  # (1, n_channels, 1)
+    std = data.std(axis=(0, 2), keepdims=True)
+    std[std == 0] = 1.0  # avoid division by zero
+    X = (data - mean) / std
+
+    # Extract labels
+    y = epochs.events[:, 2]
+    event_id = epochs.event_id
+    left_code = event_id["left"]
+    y = np.where(y == left_code, 0, 1)
+
+    logger.info(
+        "Raw features: X=%s  y=%s  (per-channel z-score normalized)",
+        X.shape, y.shape,
     )
 
     return X, y
