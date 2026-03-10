@@ -1,0 +1,51 @@
+{
+  "models": {
+    "LR_PSD": {
+      "mean_accuracy": 0.6333333333333333,
+      "std_accuracy": 0.0,
+      "n_subjects": 1,
+      "per_subject_accuracy": [
+        0.6333333333333333
+      ]
+    },
+    "LR_CSP": {
+      "mean_accuracy": 0.8666666666666668,
+      "std_accuracy": 0.0,
+      "n_subjects": 1,
+      "per_subject_accuracy": [
+        0.8666666666666668
+      ]
+    },
+    "EEGNet_Raw": {
+      "mean_accuracy": 0.8333333333333333,
+      "std_accuracy": 0.0,
+      "n_subjects": 1,
+      "per_subject_accuracy": [
+        0.8333333333333333
+      ]
+    }
+  },
+  "pairwise_tests": [
+    {
+      "model_a": "LR_PSD",
+      "model_b": "LR_CSP",
+      "t_statistic": NaN,
+      "p_value": NaN,
+      "significant": false
+    },
+    {
+      "model_a": "LR_PSD",
+      "model_b": "EEGNet_Raw",
+      "t_statistic": NaN,
+      "p_value": NaN,
+      "significant": false
+    },
+    {
+      "model_a": "LR_CSP",
+      "model_b": "EEGNet_Raw",
+      "t_statistic": NaN,
+      "p_value": NaN,
+      "significant": false
+    }
+  ]
+}

@@ -303,3 +303,167 @@ The Core Neuroscience Concepts
   baseline. The high variance per fold (std ~0.23–0.29) is expected with only 30      
   epochs per subject and 3 samples per fold. Later phases will improve this with      
   better features (CSP), better models (EEGNet), and more data (109 subjects).        
+
+----
+
+  The Big Picture
+
+  Your project is a Brain-Computer Interface (BCI) — software that reads brain signals   (EEG) and figures out whether a person is imagining moving their left hand or their   right hand. That's it. Left or right — a binary classification problem.
+
+  Phase 1 built the first working version: read brain data → clean it up → extract    
+  numerical features → train a simple classifier. Phase 2 added two more approaches so   we can compare them and find what works best.
+
+  ---
+  What's EEG Data, Actually?
+
+  Imagine 64 tiny sensors (electrodes) placed all over someone's scalp, like a cap.   
+  Each sensor records tiny voltage fluctuations caused by brain activity — about 160  
+  readings per second (160 Hz). So for one 4.5-second trial of someone imagining a    
+  hand movement, each sensor captures ~721 numbers. That's your raw data: a matrix of 
+  shape (64 channels, 721 timepoints).
+
+  The data comes from PhysioNet — a public dataset where 109 people did this exact    
+  experiment.
+
+  ---
+  The Three Approaches We Now Have
+
+  Think of it like three different strategies to solve the same problem:
+
+  Strategy 1: LR + PSD (built in Phase 1)
+
+  "What frequencies is the brain producing?"
+
+  - PSD = Power Spectral Density. This breaks a brain signal into its frequency       
+  components — like how a prism splits white light into a rainbow. Brain signals have 
+  meaningful frequency bands:
+    - Mu rhythm (8–12 Hz): This is the key one for motor imagery. When you imagine    
+  moving your LEFT hand, the mu rhythm decreases on the RIGHT side of your brain (and 
+  vice versa). This is called Event-Related Desynchronization (ERD).
+    - Beta (13–30 Hz): Also changes during motor imagery.
+    - We compute power in 6 bands total across all 64 channels = 384 features per     
+  trial.
+  - LR = Logistic Regression. A simple, well-understood classifier. It draws a line   
+  (hyperplane) in the 384-dimensional feature space that best separates "left" from   
+  "right" trials.
+
+  This got ~63% accuracy on Subject 1. Above chance (50%), but not great.
+
+  ---
+  Strategy 2: LR + CSP (new in Phase 2)
+
+  "What spatial patterns on the scalp distinguish left from right?"
+
+  This is the clever one. CSP = Common Spatial Patterns.
+
+  Here's the intuition: when you imagine moving your left hand, certain electrodes    
+  (especially C4, on the right side of the scalp) show more activity, while others    
+  show less. CSP is an algorithm that learns which combinations of electrodes are most   different between the two classes.
+
+  It finds spatial filters — weighted combinations of all 64 channels — that maximize 
+  the variance for one class while minimizing it for the other. Think of it like: "if 
+  I mix these channels together in just the right proportions, I get a signal that's  
+  very active during left-hand imagination and very quiet during right-hand
+  imagination."
+
+  We use 4 CSP components (2 favoring each class), giving us just 4 features per      
+  trial. Despite having way fewer features than PSD (4 vs 384), it often works better 
+  because those 4 features are specifically designed to capture the left-vs-right     
+  difference.
+
+  This got ~87% accuracy on Subject 1 — a big improvement.
+
+  The relevant code in src/features.py:
+
+  def extract_csp_features(epochs, n_components=4):
+      csp = CSP(n_components=4, log=True)  # log=True applies log-variance
+      X = csp.fit_transform(data, y)       # learns filters AND transforms
+      # X shape: (n_epochs, 4) — just 4 numbers per trial!
+
+  ---
+  Strategy 3: EEGNet + Raw (new in Phase 2)
+
+  "Let a neural network figure it out from the raw signals."
+
+  Instead of manually designing features (PSD bands, CSP filters), we feed the raw EEG   data directly into a Convolutional Neural Network (CNN) and let it learn what      
+  patterns matter.
+
+  EEGNet is a published architecture specifically designed for EEG. It's tiny compared   to image CNNs — only 2,834 parameters (a typical image CNN has millions). Here's   
+  what each layer does:
+
+  Raw EEG: (64 channels × 721 timepoints)
+      ↓
+  [Temporal Conv] — learns frequency filters (like our PSD bands,
+                    but the network discovers them automatically)
+      ↓
+  [Depthwise Conv] — learns spatial filters (like CSP, but learned
+                     jointly with everything else)
+      ↓
+  [Separable Conv] — combines the above into higher-level patterns
+      ↓
+  [Dense Layer] — outputs: "left" or "right"
+
+  The architecture in src/models/eegnet.py follows this flow. Key design choices:     
+
+  - ELU activation (not ReLU) — works better for EEG
+  - Average pooling (not max pooling) — preserves timing information
+  - Dropout = 0.5 — prevents overfitting on small datasets
+  - Early stopping — monitors validation loss and stops training when it stops        
+  improving (patience=30 epochs)
+
+  This got ~83% accuracy on Subject 1.
+
+  The raw data just needs per-channel z-score normalization (subtract mean, divide by 
+  standard deviation for each channel) — no hand-crafted features needed:
+
+  def extract_raw_features(epochs):
+      mean = data.mean(axis=(0, 2), keepdims=True)  # per-channel mean
+      std = data.std(axis=(0, 2), keepdims=True)     # per-channel std
+      X = (data - mean) / std                         # normalize
+
+  ---
+  Cross-Validation: How We Measure Accuracy
+
+  We can't just train on all the data and test on the same data — that would be       
+  cheating (memorization). Instead we use 10-fold stratified cross-validation:        
+
+  1. Split the ~30 trials into 10 groups
+  2. Train on 9 groups, test on the 1 held-out group
+  3. Repeat 10 times, each group gets a turn as the test set
+  4. Average the 10 accuracy scores
+
+  "Stratified" means each fold keeps the same ratio of left/right trials. All three   
+  models use the exact same fold splits (same random seed) so the comparison is fair. 
+
+  ---
+  The Comparison Framework (train.py)
+
+  The updated pipeline now runs all three strategies for each subject and produces:   
+
+  1. Per-subject accuracy table — how each model did on each person
+  2. Summary statistics — mean accuracy, F1-score, AUC-ROC across subjects
+  3. Paired t-tests — statistical test asking "is the difference between models real, 
+  or just random chance?" (needs multiple subjects to work)
+  4. Saved outputs — CSV, JSON, confusion matrix plots for every combination
+
+  ---
+  Why Three Approaches?
+
+  ┌────────────┬─────────────────────────────────┬───────────────────────────────┐    
+  │  Approach  │              Pros               │             Cons              │    
+  ├────────────┼─────────────────────────────────┼───────────────────────────────┤    
+  │ LR + PSD   │ Simple, interpretable, fast     │ Ignores spatial patterns      │    
+  ├────────────┼─────────────────────────────────┼───────────────────────────────┤    
+  │ LR + CSP   │ Captures spatial brain patterns │ Needs careful tuning of       │    
+  │            │  directly                       │ frequency bands               │    
+  ├────────────┼─────────────────────────────────┼───────────────────────────────┤    
+  │ EEGNet +   │ Learns everything automatically │ Needs more data, harder to    │    
+  │ Raw        │                                 │ interpret                     │    
+  └────────────┴─────────────────────────────────┴───────────────────────────────┘    
+
+  In BCI research, CSP + LR is the classic "gold standard" baseline, while EEGNet     
+  represents the modern deep learning approach. Having both lets you benchmark        
+  properly.
+
+  ---
+omar
