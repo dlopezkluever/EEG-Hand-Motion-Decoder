@@ -18,3 +18,5 @@ dependencies:
   - pip
   - pip:
     - mne>=1.6
+    - mlflow>=2.10
+    - joblib>=1.3
