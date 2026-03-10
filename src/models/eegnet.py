@@ -353,6 +353,7 @@ def train_eegnet_cv(
     all_y_true = []
     all_y_pred = []
     all_y_prob = []
+    last_history = None
 
     MODELS_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -365,6 +366,7 @@ def train_eegnet_cv(
 
         # Train with internal train/val split
         result = train_eegnet(X_train, y_train)
+        last_history = result["history"]
         model = result["model"]
 
         # Evaluate on test fold
@@ -428,6 +430,7 @@ def train_eegnet_cv(
         "y_true": all_y_true,
         "y_pred": all_y_pred,
         "y_prob": all_y_prob,
+        "history": last_history,
     }
 
 
