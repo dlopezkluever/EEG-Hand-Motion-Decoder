@@ -21,7 +21,7 @@ from sklearn.metrics import (
     roc_auc_score,
 )
 
-from src.config import FIGURES_DIR, RESULTS_DIR
+from src.config import FIGURES_DIR, RESULTS_DIR, SUBJECTS, RANDOM_SEED
 
 logger = logging.getLogger(__name__)
 
@@ -316,4 +316,161 @@ def generate_evaluation_report(
     # Print to console
     print(report_text)
 
+    return filepath
+
+
+# ---------------------------------------------------------------------------
+# 4.2  Leave-One-Subject-Out (LOSO) Cross-Validation
+# ---------------------------------------------------------------------------
+
+def run_loso_cv(
+    subject_data: dict[int, dict],
+    model_type: str = "LR_PSD",
+) -> dict:
+    """Run Leave-One-Subject-Out cross-validation.
+
+    Parameters
+    ----------
+    subject_data : dict mapping subject_id -> {"X": ndarray, "y": ndarray}
+        Feature matrices and labels for each subject.
+    model_type : str
+        One of "LR_PSD", "LR_CSP", "EEGNet_Raw".
+
+    Returns
+    -------
+    dict with per-subject accuracies, mean/std, and predictions.
+    """
+    from sklearn.linear_model import LogisticRegression
+    from sklearn.metrics import accuracy_score, f1_score, roc_auc_score
+    from src.config import LR_SOLVER, LR_CLASS_WEIGHT, LR_MAX_ITER, RANDOM_SEED
+
+    subject_ids = sorted(subject_data.keys())
+    per_subject_acc = {}
+    all_y_true = []
+    all_y_pred = []
+    all_y_prob = []
+
+    for test_subj in subject_ids:
+        # Train on all other subjects
+        train_X_parts = []
+        train_y_parts = []
+        for s in subject_ids:
+            if s == test_subj:
+                continue
+            train_X_parts.append(subject_data[s]["X"])
+            train_y_parts.append(subject_data[s]["y"])
+
+        train_X = np.concatenate(train_X_parts, axis=0)
+        train_y = np.concatenate(train_y_parts, axis=0)
+        test_X = subject_data[test_subj]["X"]
+        test_y = subject_data[test_subj]["y"]
+
+        if model_type in ("LR_PSD", "LR_CSP"):
+            clf = LogisticRegression(
+                solver=LR_SOLVER,
+                class_weight=LR_CLASS_WEIGHT,
+                max_iter=LR_MAX_ITER,
+                random_state=RANDOM_SEED,
+            )
+            clf.fit(train_X, train_y)
+            y_pred = clf.predict(test_X)
+            y_prob = clf.predict_proba(test_X)[:, 1]
+        elif model_type == "EEGNet_Raw":
+            from src.models.eegnet import train_eegnet
+            result = train_eegnet(train_X, train_y, val_X=test_X, val_y=test_y)
+            import torch
+            model = result["model"]
+            model.eval()
+            device = next(model.parameters()).device
+            test_tensor = torch.FloatTensor(test_X[:, np.newaxis, :, :]).to(device)
+            with torch.no_grad():
+                outputs = model(test_tensor)
+                probs = torch.softmax(outputs, dim=1)
+                _, predicted = torch.max(outputs, 1)
+            y_pred = predicted.cpu().numpy()
+            y_prob = probs[:, 1].cpu().numpy()
+        else:
+            raise ValueError(f"Unknown model_type: {model_type}")
+
+        acc = accuracy_score(test_y, y_pred)
+        per_subject_acc[test_subj] = acc
+        all_y_true.extend(test_y)
+        all_y_pred.extend(y_pred)
+        all_y_prob.extend(y_prob)
+
+        logger.info("LOSO — test subject %03d: accuracy=%.4f", test_subj, acc)
+
+    all_y_true = np.array(all_y_true)
+    all_y_pred = np.array(all_y_pred)
+    all_y_prob = np.array(all_y_prob)
+
+    mean_acc = np.mean(list(per_subject_acc.values()))
+    std_acc = np.std(list(per_subject_acc.values()))
+    macro_f1 = f1_score(all_y_true, all_y_pred, average="macro")
+    auc_roc = roc_auc_score(all_y_true, all_y_prob)
+
+    logger.info(
+        "LOSO %s — Accuracy: %.4f +/- %.4f  F1: %.4f  AUC: %.4f",
+        model_type, mean_acc, std_acc, macro_f1, auc_roc,
+    )
+
+    return {
+        "model_type": model_type,
+        "cv_type": "LOSO",
+        "per_subject_accuracy": per_subject_acc,
+        "mean_accuracy": float(mean_acc),
+        "std_accuracy": float(std_acc),
+        "macro_f1": float(macro_f1),
+        "auc_roc": float(auc_roc),
+        "y_true": all_y_true,
+        "y_pred": all_y_pred,
+        "y_prob": all_y_prob,
+    }
+
+
+def compare_within_vs_cross_subject(
+    within_results: dict,
+    loso_results: dict,
+    output_dir: Path | None = None,
+) -> Path:
+    """Generate comparison table of within-subject (10-fold) vs LOSO performance.
+
+    Parameters
+    ----------
+    within_results : dict
+        Keys are model names, values contain 'mean_accuracy', 'std_accuracy'.
+    loso_results : dict
+        Same structure but from LOSO CV.
+    """
+    output_dir = output_dir or RESULTS_DIR
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    lines = []
+    lines.append("=" * 70)
+    lines.append("  Within-Subject (10-Fold) vs Cross-Subject (LOSO) Performance")
+    lines.append("=" * 70)
+    lines.append(f"  {'Model':<15s} {'Within Acc':>12s} {'LOSO Acc':>12s} {'Drop':>8s}")
+    lines.append(f"  {'-'*15} {'-'*12} {'-'*12} {'-'*8}")
+
+    for model_name in within_results:
+        w_acc = within_results[model_name].get("mean_accuracy", 0)
+        l_acc = loso_results.get(model_name, {}).get("mean_accuracy", 0)
+        drop = w_acc - l_acc
+        lines.append(
+            f"  {model_name:<15s} {w_acc:>12.4f} {l_acc:>12.4f} {drop:>+8.4f}"
+        )
+
+    lines.append("")
+    lines.append("  Note: Cross-subject generalization typically shows 10-20% accuracy drop.")
+    lines.append("  This is expected due to inter-subject variability in EEG signals.")
+    lines.append("=" * 70)
+
+    report = "\n".join(lines)
+    print(report)
+
+    filepath = output_dir / "within_vs_loso_comparison.txt"
+    with open(filepath, "w") as f:
+        f.write(report)
+
+    logger.info("Within vs LOSO comparison saved to %s", filepath)
     return filepath
