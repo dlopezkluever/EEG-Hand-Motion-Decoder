@@ -14,6 +14,11 @@ Phase 4 additions:
   - EEGNet data augmentation (Gaussian noise + temporal jitter)
   - Global random seed control for reproducibility
   - Extended CLI: --models, --cv-folds, --output-dir, --no-cache, --loso, --tune, --augment
+
+Phase 5 additions:
+  - Optional ICA artifact removal (--ica)
+  - Optional motor cortex ROI channel selection (--roi)
+  - MLflow experiment tracking integration (--mlflow)
 """
 
 import argparse
@@ -49,6 +54,8 @@ from src.config import (
     RANDOM_SEED,
     RESULTS_DIR,
     SUBJECTS,
+    USE_ICA,
+    USE_ROI_CHANNELS,
     get_config,
 )
 from src.data_loader import download_data, load_raw
@@ -65,7 +72,8 @@ from src.evaluate import (
 from src.features import extract_csp_features, extract_psd_features, extract_raw_features
 from src.models.eegnet import train_eegnet_cv
 from src.models.logistic import train_logistic, train_logistic_tuned
-from src.preprocessing import apply_filters, extract_epochs
+from src.preprocessing import apply_filters, apply_ica, extract_epochs, pick_roi_channels
+from src.tracking import is_tracking_enabled, log_artifact, log_metrics, log_params, start_run
 from src.visualize import (
     generate_all_signal_figures,
     plot_feature_importance,
@@ -149,6 +157,8 @@ def run_subject(
     subject_id: int,
     tune: bool = False,
     augment: bool = False,
+    use_ica: bool = False,
+    use_roi: bool = False,
 ) -> dict | None:
     """Run the full pipeline for a single subject across all model-feature combos.
 
@@ -160,6 +170,10 @@ def run_subject(
         If True, also run LR with GridSearchCV hyperparameter tuning.
     augment : bool
         If True, apply data augmentation for EEGNet training.
+    use_ica : bool
+        If True, apply ICA artifact removal before epoching.
+    use_roi : bool
+        If True, restrict channels to motor cortex ROI after epoching.
 
     Returns a results dict or None if the subject fails.
     """
@@ -174,13 +188,32 @@ def run_subject(
 
         # 2. Preprocess
         filtered = apply_filters(raw)
+
+        # 2b. Optional ICA artifact removal (Phase 5.1)
+        ica_info = None
+        if use_ica:
+            filtered, ica_info = apply_ica(filtered)
+            logger.info("ICA applied: excluded %d components", ica_info["n_excluded"])
+
         epochs = extract_epochs(filtered)
+
+        # 2c. Optional ROI channel selection (Phase 5.2)
+        if use_roi:
+            epochs = pick_roi_channels(epochs)
 
         if len(epochs) == 0:
             logger.warning("No epochs survived for Subject %d — skipping.", subject_id)
             return None
 
-        subject_results = {"subject": subject_id, "n_epochs": len(epochs)}
+        subject_results = {
+            "subject": subject_id,
+            "n_epochs": len(epochs),
+            "n_channels": len(epochs.ch_names),
+            "ica_applied": use_ica,
+            "roi_applied": use_roi,
+        }
+        if ica_info:
+            subject_results["ica_n_excluded"] = ica_info["n_excluded"]
 
         # ---- Phase 3: EEG Signal Visualizations ----
         logger.info("--- Signal Visualizations ---")
@@ -499,6 +532,8 @@ def main(
     augment: bool = False,
     loso: bool = False,
     loso_models: list[str] | None = None,
+    use_ica: bool = False,
+    use_roi: bool = False,
 ) -> None:
     """Run the full pipeline for all configured subjects.
 
@@ -516,6 +551,10 @@ def main(
         If True, run LOSO cross-validation instead of within-subject.
     loso_models : list of str, optional
         Model types to run in LOSO mode.
+    use_ica : bool
+        If True, apply ICA artifact removal (Phase 5.1).
+    use_roi : bool
+        If True, restrict to motor cortex ROI channels (Phase 5.2).
     """
     # Set global seeds for reproducibility
     set_global_seeds(RANDOM_SEED)
@@ -528,7 +567,20 @@ def main(
     logger.info("Processing %d subjects: %s", len(subjects), subjects[:20])
     if len(subjects) > 20:
         logger.info("  ... and %d more", len(subjects) - 20)
-    logger.info("Options: cache=%s, tune=%s, augment=%s, loso=%s", use_cache, tune, augment, loso)
+    logger.info(
+        "Options: cache=%s, tune=%s, augment=%s, loso=%s, ica=%s, roi=%s",
+        use_cache, tune, augment, loso, use_ica, use_roi,
+    )
+
+    # MLflow experiment tracking (Phase 5.3)
+    run_tags = {
+        "ica": str(use_ica),
+        "roi": str(use_roi),
+        "augment": str(augment),
+        "tune": str(tune),
+        "n_subjects": str(len(subjects)),
+        "cv_strategy": "LOSO" if loso else "within-subject",
+    }
 
     # LOSO mode — separate code path
     if loso:
@@ -538,20 +590,36 @@ def main(
     all_results = []
     cached_count = 0
 
-    for subj in tqdm(subjects, desc="Subjects", total=len(subjects)):
-        # Check cache
-        if use_cache and CACHE_RESULTS and _subject_result_exists(subj):
-            cached = _load_cached_result(subj)
-            if cached is not None:
-                all_results.append(cached)
-                cached_count += 1
-                logger.info("Subject %03d — loaded from cache", subj)
-                continue
+    with start_run(run_name=f"train_{len(subjects)}subj", tags=run_tags):
+        log_params({k: str(v)[:500] for k, v in cfg.items()})
 
-        result = run_subject(subj, tune=tune, augment=augment)
-        if result is not None:
-            all_results.append(result)
+        for subj in tqdm(subjects, desc="Subjects", total=len(subjects)):
+            # Check cache
+            if use_cache and CACHE_RESULTS and _subject_result_exists(subj):
+                cached = _load_cached_result(subj)
+                if cached is not None:
+                    all_results.append(cached)
+                    cached_count += 1
+                    logger.info("Subject %03d — loaded from cache", subj)
+                    continue
 
+            result = run_subject(subj, tune=tune, augment=augment, use_ica=use_ica, use_roi=use_roi)
+            if result is not None:
+                all_results.append(result)
+
+        # --- remaining processing inside MLflow run context ---
+        _finalize_results(
+            all_results, subjects, cached_count, tune,
+        )
+
+
+def _finalize_results(
+    all_results: list[dict],
+    subjects: list[int],
+    cached_count: int,
+    tune: bool,
+) -> None:
+    """Post-processing: save CSVs, generate reports, log to MLflow."""
     if cached_count > 0:
         logger.info("Loaded %d subjects from cache, processed %d new",
                      cached_count, len(all_results) - cached_count)
@@ -664,6 +732,18 @@ def main(
         print(f"  (from cache: {cached_count}, newly processed: {len(df) - cached_count})")
     print("=" * 80 + "\n")
 
+    # Phase 5.3: Log aggregate metrics and artifacts to MLflow
+    for name, acc_col, f1_col, auc_col in model_configs:
+        if acc_col in df.columns:
+            log_metrics({
+                f"{name}_mean_accuracy": float(df[acc_col].mean()),
+                f"{name}_std_accuracy": float(df[acc_col].std()),
+                f"{name}_mean_f1": float(df[f1_col].mean()),
+                f"{name}_mean_auc": float(df[auc_col].mean()),
+            })
+    log_artifact(csv_path)
+    log_artifact(RESULTS_DIR / "evaluation_report.txt")
+
 
 if __name__ == "__main__":
     logging.basicConfig(
@@ -682,6 +762,9 @@ Examples:
   python train.py --loso --subjects 1 2 3    # Run LOSO cross-validation
   python train.py --no-cache                 # Force reprocessing all subjects
   python train.py --cv-folds 5               # Use 5-fold instead of 10-fold CV
+  python train.py --ica                      # Enable ICA artifact removal
+  python train.py --roi                      # Use motor cortex ROI channels only
+  python train.py --mlflow                   # Enable MLflow experiment tracking
         """,
     )
     parser.add_argument(
@@ -737,6 +820,21 @@ Examples:
         default=None,
         help="Override random seed (default: config.RANDOM_SEED=42)",
     )
+    parser.add_argument(
+        "--ica",
+        action="store_true",
+        help="Enable ICA artifact removal (Phase 5.1)",
+    )
+    parser.add_argument(
+        "--roi",
+        action="store_true",
+        help="Restrict to motor cortex ROI channels (Phase 5.2)",
+    )
+    parser.add_argument(
+        "--mlflow",
+        action="store_true",
+        help="Enable MLflow experiment tracking (Phase 5.3)",
+    )
     args = parser.parse_args()
 
     # Override config values from CLI
@@ -757,6 +855,19 @@ Examples:
         import src.config as cfg_module
         cfg_module.RANDOM_SEED = args.seed
 
+    # Phase 5: ICA and ROI config overrides
+    if args.ica:
+        import src.config as cfg_module
+        cfg_module.USE_ICA = True
+
+    if args.roi:
+        import src.config as cfg_module
+        cfg_module.USE_ROI_CHANNELS = True
+
+    if args.mlflow:
+        import src.config as cfg_module
+        cfg_module.USE_MLFLOW = True
+
     main(
         subjects=args.subjects,
         use_cache=not args.no_cache,
@@ -764,4 +875,6 @@ Examples:
         augment=args.augment,
         loso=args.loso,
         loso_models=args.loso_models,
+        use_ica=args.ica,
+        use_roi=args.roi,
     )
