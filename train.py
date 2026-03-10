@@ -17,18 +17,29 @@ import numpy as np
 import pandas as pd
 from scipy import stats
 
-from src.config import RESULTS_DIR, SUBJECTS, get_config
+from src.config import FIGURES_DIR, FREQ_BANDS, RESULTS_DIR, SUBJECTS, get_config
 from src.data_loader import download_data, load_raw
 from src.evaluate import (
     compute_metrics,
+    generate_evaluation_report,
     plot_confusion_matrix,
     print_metrics_table,
     save_results,
+    save_results_csv,
 )
 from src.features import extract_csp_features, extract_psd_features, extract_raw_features
 from src.models.eegnet import train_eegnet_cv
 from src.models.logistic import train_logistic
 from src.preprocessing import apply_filters, extract_epochs
+from src.visualize import (
+    generate_all_signal_figures,
+    plot_feature_importance,
+    plot_multi_roc,
+    plot_roc_curve,
+    plot_subject_accuracy_bar,
+    plot_training_curves,
+    plot_confusion_matrix as viz_plot_confusion_matrix,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -57,6 +68,10 @@ def run_subject(subject_id: int) -> dict | None:
 
         subject_results = {"subject": subject_id, "n_epochs": len(epochs)}
 
+        # ---- Phase 3: EEG Signal Visualizations ----
+        logger.info("--- Signal Visualizations ---")
+        generate_all_signal_figures(epochs, subject_id)
+
         # ---- Model 1: LR + PSD ----
         logger.info("--- LR + PSD ---")
         X_psd, y_psd = extract_psd_features(epochs)
@@ -69,6 +84,20 @@ def run_subject(subject_id: int) -> dict | None:
         print_metrics_table(metrics_lr_psd, "LR_PSD", subject_id)
         save_results(metrics_lr_psd, "LR_PSD", subject_id)
         plot_confusion_matrix(lr_psd["y_true"], lr_psd["y_pred"], "LR_PSD", subject_id)
+        plot_roc_curve(lr_psd["y_true"], lr_psd["y_prob"], "LR_PSD", subject_id)
+
+        # Feature importance for LR+PSD
+        from sklearn.linear_model import LogisticRegression
+        from src.config import LR_SOLVER, LR_CLASS_WEIGHT, LR_MAX_ITER, RANDOM_SEED
+        lr_model = LogisticRegression(
+            solver=LR_SOLVER, class_weight=LR_CLASS_WEIGHT,
+            max_iter=LR_MAX_ITER, random_state=RANDOM_SEED,
+        )
+        lr_model.fit(X_psd, y_psd)
+        bands = list(FREQ_BANDS.keys())
+        ch_names = epochs.ch_names
+        feat_names = [f"{ch}_{band}" for ch in ch_names for band in bands]
+        plot_feature_importance(lr_model.coef_[0], feat_names, "LR_PSD", subject_id)
 
         subject_results["lr_psd_accuracy"] = lr_psd["mean_accuracy"]
         subject_results["lr_psd_std"] = lr_psd["std_accuracy"]
@@ -88,6 +117,7 @@ def run_subject(subject_id: int) -> dict | None:
         print_metrics_table(metrics_lr_csp, "LR_CSP", subject_id)
         save_results(metrics_lr_csp, "LR_CSP", subject_id)
         plot_confusion_matrix(lr_csp["y_true"], lr_csp["y_pred"], "LR_CSP", subject_id)
+        plot_roc_curve(lr_csp["y_true"], lr_csp["y_prob"], "LR_CSP", subject_id)
 
         subject_results["lr_csp_accuracy"] = lr_csp["mean_accuracy"]
         subject_results["lr_csp_std"] = lr_csp["std_accuracy"]
@@ -110,6 +140,23 @@ def run_subject(subject_id: int) -> dict | None:
         save_results(metrics_eegnet, "EEGNet_Raw", subject_id)
         plot_confusion_matrix(
             eegnet_results["y_true"], eegnet_results["y_pred"], "EEGNet_Raw", subject_id
+        )
+        plot_roc_curve(
+            eegnet_results["y_true"], eegnet_results["y_prob"], "EEGNet_Raw", subject_id
+        )
+
+        # Training curves (use history from last fold — representative)
+        if "history" in eegnet_results:
+            plot_training_curves(eegnet_results["history"], "EEGNet", subject_id)
+
+        # Multi-model ROC comparison
+        plot_multi_roc(
+            [
+                {"model_name": "LR+PSD", "y_true": lr_psd["y_true"], "y_prob": lr_psd["y_prob"]},
+                {"model_name": "LR+CSP", "y_true": lr_csp["y_true"], "y_prob": lr_csp["y_prob"]},
+                {"model_name": "EEGNet", "y_true": eegnet_results["y_true"], "y_prob": eegnet_results["y_prob"]},
+            ],
+            subject_id,
         )
 
         subject_results["eegnet_accuracy"] = eegnet_results["mean_accuracy"]
@@ -214,6 +261,31 @@ def main(subjects: list[int] | None = None) -> None:
     with open(comparison_path, "w") as f:
         json.dump(comparison, f, indent=2)
     logger.info("Comparison JSON saved to %s", comparison_path)
+
+    # ---- Phase 3: Subject accuracy bar chart ----
+    plot_subject_accuracy_bar(df)
+
+    # ---- Phase 3: Full metrics CSV ----
+    metric_rows = []
+    for r in all_results:
+        for model_key, acc_key, f1_key, auc_key in [
+            ("LR_PSD", "lr_psd_accuracy", "lr_psd_f1", "lr_psd_auc"),
+            ("LR_CSP", "lr_csp_accuracy", "lr_csp_f1", "lr_csp_auc"),
+            ("EEGNet_Raw", "eegnet_accuracy", "eegnet_f1", "eegnet_auc"),
+        ]:
+            if acc_key in r:
+                metric_rows.append({
+                    "subject": r["subject"],
+                    "model": model_key,
+                    "accuracy": r[acc_key],
+                    "f1_macro": r.get(f1_key),
+                    "auc_roc": r.get(auc_key),
+                })
+    if metric_rows:
+        save_results_csv(metric_rows)
+
+    # ---- Phase 3: Comprehensive evaluation report ----
+    generate_evaluation_report(df, comparison)
 
     # Print side-by-side comparison table
     print("\n" + "=" * 80)
