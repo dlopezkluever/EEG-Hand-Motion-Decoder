@@ -327,6 +327,7 @@ def train_eegnet(
 def train_eegnet_cv(
     X: np.ndarray,
     y: np.ndarray,
+    augment_fn=None,
 ) -> dict:
     """Train EEGNet with stratified k-fold cross-validation.
 
@@ -336,6 +337,9 @@ def train_eegnet_cv(
     ----------
     X : ndarray of shape (n_epochs, n_channels, n_timepoints)
     y : ndarray of shape (n_epochs,)
+    augment_fn : callable, optional
+        Data augmentation function: augment_fn(X_train, y_train) -> (X_aug, y_aug).
+        Applied only to training data within each fold.
 
     Returns
     -------
@@ -361,8 +365,14 @@ def train_eegnet_cv(
         X_train, X_test = X[train_idx], X[test_idx]
         y_train, y_test = y[train_idx], y[test_idx]
 
+        # Apply data augmentation to training data only
+        if augment_fn is not None:
+            X_train, y_train = augment_fn(X_train, y_train)
+            logger.info("  Augmented training data: %d -> %d epochs",
+                         len(train_idx), len(X_train))
+
         logger.info("EEGNet Fold %d/%d — train=%d, test=%d",
-                     fold_idx + 1, CV_N_FOLDS, len(train_idx), len(test_idx))
+                     fold_idx + 1, CV_N_FOLDS, len(X_train), len(test_idx))
 
         # Train with internal train/val split
         result = train_eegnet(X_train, y_train)
