@@ -1,26 +1,32 @@
 {
   "models": {
     "LR_PSD": {
-      "mean_accuracy": 0.6333333333333333,
-      "std_accuracy": 0.0,
-      "n_subjects": 1,
+      "mean_accuracy": 0.5555555555555555,
+      "std_accuracy": 0.06285393610547091,
+      "n_subjects": 3,
       "per_subject_accuracy": [
-        0.6333333333333333
+        0.6,
+        0.6,
+        0.4666666666666666
       ]
     },
     "LR_CSP": {
-      "mean_accuracy": 0.8666666666666668,
-      "std_accuracy": 0.0,
-      "n_subjects": 1,
+      "mean_accuracy": 0.8777777777777777,
+      "std_accuracy": 0.10304020550550778,
+      "n_subjects": 3,
       "per_subject_accuracy": [
-        0.8666666666666668
+        0.9666666666666666,
+        0.7333333333333333,
+        0.9333333333333332
       ]
     },
     "EEGNet_Raw": {
-      "mean_accuracy": 0.8333333333333333,
-      "std_accuracy": 0.0,
-      "n_subjects": 1,
+      "mean_accuracy": 0.7777777777777777,
+      "std_accuracy": 0.10304020550550778,
+      "n_subjects": 3,
       "per_subject_accuracy": [
+        0.8666666666666666,
+        0.6333333333333333,
         0.8333333333333333
       ]
     }
@@ -29,23 +35,23 @@
     {
       "model_a": "LR_PSD",
       "model_b": "LR_CSP",
-      "t_statistic": NaN,
-      "p_value": NaN,
+      "t_statistic": -3.2627549126854696,
+      "p_value": 0.08248060410591763,
       "significant": false
     },
     {
       "model_a": "LR_PSD",
       "model_b": "EEGNet_Raw",
-      "t_statistic": NaN,
-      "p_value": NaN,
+      "t_statistic": -2.2501758018520475,
+      "p_value": 0.1533324866653967,
       "significant": false
     },
     {
       "model_a": "LR_CSP",
       "model_b": "EEGNet_Raw",
-      "t_statistic": NaN,
-      "p_value": NaN,
-      "significant": false
+      "t_statistic": Infinity,
+      "p_value": 0.0,
+      "significant": true
     }
   ]
 }
